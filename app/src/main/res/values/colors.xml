@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="status_blocked">#2E7D32</color>
+    <color name="status_not_blocked">#C62828</color>
+    <color name="status_root_untrusted">#EF6C00</color>
+    <color name="status_error">#757575</color>
+    <color name="hint">#757575</color>
+    <color name="divider">#1F000000</color>
+</resources>

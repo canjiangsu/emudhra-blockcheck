@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">eMudhra CA 阻断验证</string>
+    <string name="app_subtitle">在本机回环地址上逐一验证 8 个已泄露 eMudhra 中间 CA 是否被 Android 系统默认信任路径阻断。</string>
+    <string name="footnote">仅测试系统默认 TrustManager；结果不代表浏览器 CRLSet/吊销检查的结论。</string>
+    <string name="start">开始验证</string>
+    <string name="running">验证中…</string>
+    <string name="copy">复制结果</string>
+    <string name="share">分享</string>
+    <string name="idle">尚未开始。</string>
+    <string name="loading">正在读取证书并准备 TLS 服务端…</string>
+    <string name="load_failed">验证失败：%1$s</string>
+    <string name="progress">正在验证 %1$d/%2$d：%3$s</string>
+    <string name="summary">完成：阻断 %1$d · 未阻断 %2$d · 无法判定 %3$d · 错误 %4$d</string>
+    <string name="copied">结果已复制到剪贴板。</string>
+    <string name="share_title">分享验证结果</string>
+</resources>
