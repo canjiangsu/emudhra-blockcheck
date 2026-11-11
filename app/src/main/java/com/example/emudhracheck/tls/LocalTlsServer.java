@@ -5,13 +5,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.security.GeneralSecurityException;
-import java.security.KeyStore;
 import java.security.PrivateKey;
-import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSession;
@@ -94,31 +90,19 @@ public final class LocalTlsServer {
 
     public static Handle start(X509Certificate[] chain, PrivateKey leafKey)
             throws GeneralSecurityException, IOException {
-        KeyStore keyStore = newKeyStore();
-        char[] password = randomPassword();
-        try {
-            keyStore.setKeyEntry("leaf", leafKey, password, chain);
-            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(
-                    KeyManagerFactory.getDefaultAlgorithm());
-            keyManagerFactory.init(keyStore, password);
+        SSLContext context = TlsContexts.serverContext(chain, leafKey);
 
-            SSLContext context = SSLContext.getInstance("TLS");
-            context.init(keyManagerFactory.getKeyManagers(), null, null);
+        SSLServerSocket serverSocket = (SSLServerSocket) context.getServerSocketFactory()
+                .createServerSocket(0, 1, InetAddress.getByName(LOOPBACK));
+        serverSocket.setSoTimeout(ACCEPT_TIMEOUT_MS);
+        serverSocket.setNeedClientAuth(false);
 
-            SSLServerSocket serverSocket = (SSLServerSocket) context.getServerSocketFactory()
-                    .createServerSocket(0, 1, InetAddress.getByName(LOOPBACK));
-            serverSocket.setSoTimeout(ACCEPT_TIMEOUT_MS);
-            serverSocket.setNeedClientAuth(false);
-
-            int port = serverSocket.getLocalPort();
-            AtomicReference<ServerResult> result = new AtomicReference<>();
-            Thread thread = new Thread(() -> serveOnce(serverSocket, result), "local-tls-server");
-            thread.setDaemon(true);
-            thread.start();
-            return new Handle(serverSocket, thread, port, result);
-        } finally {
-            Arrays.fill(password, '\0');
-        }
+        int port = serverSocket.getLocalPort();
+        AtomicReference<ServerResult> result = new AtomicReference<>();
+        Thread thread = new Thread(() -> serveOnce(serverSocket, result), "local-tls-server");
+        thread.setDaemon(true);
+        thread.start();
+        return new Handle(serverSocket, thread, port, result);
     }
 
     private static void serveOnce(SSLServerSocket serverSocket,
@@ -140,28 +124,5 @@ public final class LocalTlsServer {
             }
         }
         result.set(serverResult);
-    }
-
-    private static KeyStore newKeyStore() throws GeneralSecurityException, IOException {
-        try {
-            KeyStore keyStore = KeyStore.getInstance("PKCS12");
-            keyStore.load(null, null);
-            return keyStore;
-        } catch (Exception ignored) {
-            // 少数老系统/实现不支持内存 PKCS12，回退到平台默认类型。
-            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-            keyStore.load(null, null);
-            return keyStore;
-        }
-    }
-
-    private static char[] randomPassword() {
-        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        SecureRandom random = new SecureRandom();
-        char[] password = new char[24];
-        for (int i = 0; i < password.length; i++) {
-            password[i] = alphabet.charAt(random.nextInt(alphabet.length()));
-        }
-        return password;
     }
 }

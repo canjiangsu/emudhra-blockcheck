@@ -15,15 +15,12 @@ import android.widget.TextView;
 import android.widget.Toast;
 import com.example.emudhracheck.tls.ExceptionClassifier;
 import com.example.emudhracheck.tls.SystemTrust;
+import com.example.emudhracheck.verify.AndroidAssets;
 import com.example.emudhracheck.verify.CaEntry;
 import com.example.emudhracheck.verify.CaRepository;
 import com.example.emudhracheck.verify.ResultFormatter;
 import com.example.emudhracheck.verify.VerificationResult;
 import com.example.emudhracheck.verify.VerificationRunner;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -72,6 +69,8 @@ public class MainActivity extends Activity {
         startButton.setOnClickListener(v -> startVerification());
         copyButton.setOnClickListener(v -> copyResults());
         shareButton.setOnClickListener(v -> shareResults());
+        findViewById(R.id.button_expose).setOnClickListener(
+                v -> startActivity(new Intent(this, ExposedServiceActivity.class)));
     }
 
     private void startVerification() {
@@ -90,8 +89,7 @@ public class MainActivity extends Activity {
 
         executor.execute(() -> {
             try {
-                CaRepository.Reader reader = this::readAsset;
-                List<CaEntry> entries = CaRepository.load(reader);
+                List<CaEntry> entries = CaRepository.load(AndroidAssets.reader(this));
 
                 VerificationRunner runner = new VerificationRunner(
                         entry -> SystemTrust.defaultClientContext(),
@@ -197,18 +195,6 @@ public class MainActivity extends Activity {
             // 版本号仅用于报告，失败不影响验证。
         }
         return out.toString();
-    }
-
-    private String readAsset(String path) throws IOException {
-        try (InputStream input = getAssets().open(path)) {
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-            return new String(output.toByteArray(), StandardCharsets.UTF_8);
-        }
     }
 
     private void runOnUiThreadSafe(Runnable action) {

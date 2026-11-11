@@ -59,6 +59,27 @@ public class LeafCertificateTest {
         }
     }
 
+    @Test
+    public void issuesLeafWithExplicitSanList() throws Exception {
+        CaEntry entry = TestAssets.entries().get(0);
+        SecureRandom random = new SecureRandom();
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"), random);
+        KeyPair pair = generator.generateKeyPair();
+
+        X509Certificate leaf = LeafCertificateIssuer.issue(
+                entry.intermediate, entry.key, pair.getPublic(),
+                Arrays.asList("localhost", "device.test"),
+                Arrays.asList(new byte[]{127, 0, 0, 1}, new byte[]{10, 0, 0, 1}),
+                LeafCertificateIssuer.ONE_DAY_MS, random);
+
+        assertSan(leaf, 2, "localhost");
+        assertSan(leaf, 2, "device.test");
+        assertSan(leaf, 7, "127.0.0.1");
+        assertSan(leaf, 7, "10.0.0.1");
+        leaf.verify(entry.intermediate.getPublicKey());
+    }
+
     private static void validatePkix(X509Certificate leaf, CaEntry entry) throws Exception {
         CertificateFactory factory = CertificateFactory.getInstance("X.509");
         CertPath path = factory.generateCertPath(Arrays.asList(leaf, entry.intermediate));

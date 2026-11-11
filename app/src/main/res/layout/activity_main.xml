@@ -52,6 +52,16 @@
             style="?android:attr/buttonBarButtonStyle" />
     </LinearLayout>
 
+    <Button
+        android:id="@+id/button_expose"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:minWidth="0dp"
+        android:text="@string/expose_entry"
+        android:textSize="14sp"
+        style="?android:attr/buttonBarButtonStyle" />
+
     <ProgressBar
         android:id="@+id/progress"
         style="?android:attr/progressBarStyleHorizontal"

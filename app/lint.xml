@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+        PinnedTrust 是一个刻意的自定义 TrustManager：它使用标准 PKIX 路径校验并只信任
+        指定根，目的是绕过平台证书黑名单来完成对照组验证。它不是跳过证书校验。
+    -->
+    <issue id="CustomX509TrustManager">
+        <ignore path="src/main/java/com/example/emudhracheck/tls/PinnedTrust.java" />
+    </issue>
+</lint>

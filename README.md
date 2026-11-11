@@ -54,8 +54,12 @@ emudhra-blockcheck/
 │   │   ├── crypto/                 # PEM 解析、DER、SEC1→PKCS#8、叶子证书签发
 │   │   ├── tls/                    # 本机 TLS 服务端/客户端、系统信任、对照组、异常分类
 │   │   ├── verify/                 # 资产加载、批量编排、结果模型与文本导出
-│   │   ├── MainActivity.java       # 单 Activity UI
-│   │   └── ResultAdapter.java
+│   │   ├── expose/                 # 对外 TLS 端点、本机地址/SAN、端口状态
+│   │   ├── MainActivity.java       # 单机验证 UI
+│   │   ├── ResultAdapter.java
+│   │   ├── ExposedServiceActivity.java  # 对外服务 UI
+│   │   ├── ExposedVerificationService.java # 前台 Service
+│   │   └── ExposedPortAdapter.java
 │   └── res/
 ├── app/src/test/                   # JVM 单元测试（使用真实 8 组证书）
 ├── docs/superpowers/specs/         # 设计规格
@@ -142,22 +146,91 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
+## 对外验证服务（供其它 APK / 外机连接）
+
+有些客户端自带信任证书库。主界面点击 **对外验证服务**，可以把本机变成 8 个固定 TLS
+端点，让同机其它 APK 或局域网内的外机用自己的 TrustManager/CA bundle 连接：
+
+- 握手成功 ⇒ 客户端接受了一条由已泄露 eMudhra 中间 CA 签发的链，说明客户端信任配置
+  没有阻断它；
+- 握手因证书失败 ⇒ 客户端拒绝该链。
+
+固定端口与 CA 一一对应：
+
+| 端口 | 中间 CA |
+| --- | --- |
+| 18443 | EM DV TLS CA - G3B |
+| 18444 | EM DV TLS CA - G3C |
+| 18445 | EM EV TLS CA - G3B |
+| 18446 | EM EV TLS CA - G3C |
+| 18447 | EM OV CS CA - G3B |
+| 18448 | EM OV CS CA - G3C |
+| 18449 | EM OV TLS CA - G3B |
+| 18450 | EM OV TLS CA - G3C |
+
+### 使用
+
+1. 主界面 → **对外验证服务**；
+2. 默认只绑定 `127.0.0.1`，供同机其它 APK 使用；勾选 **允许局域网访问** 后绑定所有接口
+   （仅接受回环与私有来源地址：RFC1918 / ULA / link-local）；
+3. 点击 **启动服务**，前台通知常驻；测试完成后点击 **停止服务** 或通知里的“停止服务”；
+4. 页面显示本机 IP、8 个端口状态与成功/失败/来源拒绝计数，可复制服务地址。
+
+客户端示例（必须使用客户端自己的信任库，**不要用 `curl -k`**）：
+
+```bash
+# 客户端的信任库包含 AAA 根 → 握手成功，说明它没有阻断该已泄露 CA
+curl --cacert aaa-certificate-services.pem https://<设备IP>:18443/
+
+# 换成错误根或空信任库 → 证书校验失败，说明客户端拒绝了该链
+curl --cacert emsign-ecc-root-ca-g3.pem https://<设备IP>:18443/
+
+# OpenSSL
+openssl s_client -connect <设备IP>:18443 -CAfile aaa-certificate-services.pem \
+    -verify_hostname <设备IP>
+```
+
+同机其它 APK 直接把主机写成 `127.0.0.1`、端口 18443–18450，使用它自己的
+TrustManager/网络配置即可。服务在握手成功后返回一段 HTTP 200 纯文本（CA 名称、端口
+与判定说明），随后关闭连接。
+
+### 证书 SAN 与安全边界
+
+- 叶子证书 SAN 固定为 `localhost`、`127.0.0.1`、`::1` 以及服务启动时本机所有非
+  link-local 网卡地址（IPv4/IPv6）。**不支持任意域名、CSR、私钥导出**；网络地址变化后
+  需停止并重启服务以刷新 SAN。
+- 默认仅回环；局域网模式是显式开关，且只接受私有/回环来源。服务使用前台通知，便于
+  随时停止。
+- 每个端口串行处理连接，握手 8 秒、HTTP 读 2 秒超时，完成后立即关闭；不记录私钥。
+- 端口被占用时该行显示失败原因，其余端口继续监听。
+
+### 重要前提
+
+握手失败**不一定**是中间 CA 被阻断：也可能客户端根本不信任 `AAA Certificate
+Services` 根，或客户端使用了自定义 pinning。使用前应先确认客户端的信任库包含该根。
+服务端计数是服务端视角的“握手成功/失败/来源拒绝”，仅作参考；TLS 1.3 下客户端可能在
+服务端握手完成后才拒绝证书，最终结论以客户端为准。
+
+---
+
 ## 测试
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-17 个 JVM 单元测试，全部使用 `app/src/main/assets` 中的**真实** 8 组证书/私钥：
+22 个 JVM 单元测试，全部使用 `app/src/main/assets` 中的**真实** 8 组证书/私钥：
 
 - `PemTest`：带注释的 `.0` 根文件、多 PEM 块、SEC1 私钥块解析；
 - `CaMaterialTest`：8 个中间 CA 与根匹配、根验签通过；每个 SEC1 私钥签名可被对应
   中间 CA 公钥验签（证明私钥与证书匹配）；
 - `LeafCertificateTest`：对每个 CA 签发叶子证书，校验签名、issuer/subject、SAN
   （`localhost` + `127.0.0.1`）、有效期、BasicConstraints/KeyUsage/EKU，并执行
-  `PKIX` 证书路径校验；
+  `PKIX` 证书路径校验；另覆盖多 DNS/IP SAN 列表；
 - `VerificationRunnerTest`：真实本地 TLS 握手下，验证“系统信任 / 系统拒绝+对照成功 /
   根不受信任 / 本地链错误”四种判定，以及 JVM 默认系统 TrustManager 代码路径；
+- `ExposedTlsServerTest`：对外服务 8 个端口全部可握手、HTTP 200 与 CA 名称、SAN、
+  拒绝型客户端计数、端口占用降级、来源地址过滤、停止后监听关闭；
 - `ExceptionClassifierTest`：`CertificateException`、`CertPathValidatorException`、
   `CertificateRevokedException`、深层 cause 链、网络/主机名异常；
 - `ResultFormatterTest`：汇总与导出文本。
@@ -166,11 +239,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ```text
 ./gradlew --offline testDebugUnitTest assembleDebug lintDebug
-# 17 tests passed, BUILD SUCCESSFUL, lint issues: 0
+# 22 tests passed, BUILD SUCCESSFUL, lint issues: 0
 ```
 
-> 本项目按需求仅做构建与 JVM 单元测试，未启动模拟器；真机结果取决于该设备的系统
-> 版本与信任库更新状态。
+此外，已在 Android 13（userdebug）真机上完成端到端验证：回环与局域网模式
+均可连接；使用 AAA 根 `curl` 成功并收到 200，使用错误根失败；服务停止后监听端口全部
+关闭。真机结果仍取决于该设备的系统版本与信任库更新状态。
 
 ---
 
@@ -181,8 +255,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
   `KeyFactory("EC")`，兼容 PKCS#8 与 SEC1 两种 PEM。
 - **叶子证书**：issuer 直接复用中间 CA 证书 subject 的 DER，保证链逐字节匹配；
   SAN 同时包含 DNS 与 IP；签发后立即用中间 CA 公钥验签，DER 编码错误会立即暴露。
-- **TLS 服务端**：只 bind `127.0.0.1`，端口 0 由系统随机分配，只 accept 一次，
+- **本机回环探针**：只 bind `127.0.0.1`，端口 0 由系统随机分配，只 accept 一次，
   握手后立即关闭；accept/连接/握手均有超时。
+- **对外验证服务**：固定 18443–18450 端口，每个 CA 一张叶子证书；默认回环，显式
+  开启 LAN 后绑定所有接口并过滤非私有来源；前台 Service 常驻，停止时关闭全部 socket。
 - **系统测试**：`SSLContext.init(null, null, null)`，不设置自定义 TrustManager。
 - **对照组**：自实现 `X509TrustManager`，用 `CertPathValidator("PKIX")` 只信任对应根；
   刻意不经过 Conscrypt `TrustManagerImpl`，从而不受系统证书黑名单影响。
@@ -237,8 +313,15 @@ APEX 一起刷入（通常在 system/super 镜像内），仅 `adb sync` framewo
 - 根信任预检查以字节匹配为主，subject + 公钥匹配为兜底；定制系统可能有特殊行为。
 - `targetSdk 34`，Android 7+ 默认不信任用户安装的 CA；本工具反映的是系统信任库，
   不是用户 CA 或 Magisk 模块注入后的环境。
-- 叶子证书每次运行重新生成（P-256 密钥、1 天有效期），不复用、不落盘。
-- APK 内包含泄露私钥，任何人解包均可提取；仅限授权测试使用。
+- 本机验证的叶子证书每次运行重新生成（P-256 密钥、1 天有效期）；对外服务的叶子证书
+  在服务启动时生成（7 天有效期），不复用、不落盘。
+- 对外服务的 SAN 只覆盖本机回环与网卡地址；客户端用 DNS 名或 link-local 地址连接可能
+  主机名校验失败，请使用页面显示的本机 IP。网络变化后需停止并重启服务。
+- 对外服务的成功/失败计数是服务端视角，TLS 1.3 下与客户端结论可能不一致；以客户端为准。
+- 局域网模式只接受回环与私有/链接本地来源，公网来源会被拒绝；仅在可信网络中使用，并
+  在测试完成后停止服务。
+- APK 内包含泄露私钥，任何人解包均可提取；对外端点也只签发固定本机地址的临时证书，
+  但仅限授权测试使用，禁止公开分发。
 
 ---
 

@@ -14,4 +14,35 @@
     <string name="summary">完成：阻断 %1$d · 未阻断 %2$d · 无法判定 %3$d · 错误 %4$d</string>
     <string name="copied">结果已复制到剪贴板。</string>
     <string name="share_title">分享验证结果</string>
+
+    <string name="expose_entry">对外验证服务（供其它 APK / 外机连接）</string>
+    <string name="expose_title">对外 TLS 验证服务</string>
+    <string name="expose_subtitle">让其它 APK 或外机用它们自己的信任库连接本机 8 个 TLS 端点。握手成功表示客户端接受了已泄露 CA 签发的链；握手因证书失败表示客户端拒绝。</string>
+    <string name="expose_warning">安全提示：仅在你信任的局域网内启用。服务只签发包含本机地址的固定证书，不支持任意域名、CSR 或私钥导出。测试完成后请停止服务。</string>
+    <string name="expose_start">启动服务</string>
+    <string name="expose_stop">停止服务</string>
+    <string name="expose_lan">允许局域网访问（0.0.0.0，仅私有来源）</string>
+    <string name="expose_stopped">未启动</string>
+    <string name="expose_starting">正在启动…</string>
+    <string name="expose_running">运行中 · 绑定 %1$s</string>
+    <string name="expose_start_failed">启动失败：%1$s</string>
+    <string name="expose_addresses">本机地址：%1$s</string>
+    <string name="expose_copy">复制服务地址</string>
+    <string name="expose_copied">服务地址已复制到剪贴板。</string>
+    <string name="expose_footnote">客户端必须使用自己的 TrustManager/CA bundle；不要用 curl -k 跳过校验。握手失败也可能只是客户端不信任 AAA 根，不能直接归因于中间 CA。</string>
+    <string name="expose_status_listening">监听中</string>
+    <string name="expose_status_failed">失败</string>
+    <string name="expose_status_idle">未启动</string>
+    <string name="expose_counters">成功 %1$d · 失败 %2$d · 拒绝来源 %3$d</string>
+    <string name="expose_port">:%1$d</string>
+    <string name="expose_notification_channel">对外 TLS 验证服务</string>
+    <string name="expose_notification_title">eMudhra 对外 TLS 验证服务</string>
+    <string name="expose_notification_starting">正在启动（%1$s）…</string>
+    <string name="expose_notification_running">运行中 · %1$s</string>
+    <string name="expose_notification_failed">启动失败：%1$s</string>
+    <string name="expose_notification_stop">停止服务</string>
+    <string name="expose_lan_mode">局域网</string>
+    <string name="expose_loopback_mode">仅本机</string>
+    <string name="expose_permission_denied">未授予通知权限，服务仍会运行，但通知可能不显示。</string>
+    <string name="expose_unknown">—</string>
 </resources>

@@ -52,6 +52,15 @@ public final class CaRepository {
     private CaRepository() {
     }
 
+    /** 8 个 CA 的展示名称，顺序与固定端口 18443..18450 一致。 */
+    public static List<String> displayNames() {
+        List<String> names = new ArrayList<>();
+        for (Spec spec : SPECS) {
+            names.add(spec.name);
+        }
+        return names;
+    }
+
     public static List<CaEntry> load(Reader reader) throws Exception {
         CertificateFactory factory = CertificateFactory.getInstance("X.509");
 
