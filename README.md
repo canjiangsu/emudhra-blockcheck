@@ -19,7 +19,9 @@ eMudhra 中间 CA 签发的证书链。
    `[叶子证书, 中间 CA, 根证书]`。
 3. **系统测试**：客户端使用 `SSLContext.getInstance("TLS")` 且**不设置自定义
    TrustManager**，完全依赖系统默认信任库。
-4. **对照组**：同一张叶子证书，客户端只信任对应根证书，走标准 PKIX 校验。
+4. **对照组**：同一张叶子证书，客户端只信任对应根证书，走**自实现的纯 PKIX 校验**
+   （`CertPathValidator`），**刻意绕开 Conscrypt 的 `TrustManagerImpl`，因此不受系统证书
+   黑名单影响**。
 
 判定规则：
 
@@ -32,6 +34,11 @@ eMudhra 中间 CA 签发的证书链。
 
 **为什么需要对照组**：如果叶子证书、签名算法或本机 TLS 栈本身有问题，系统握手也会失败。
 只有对照组成功时，才能把系统失败归因为“系统层阻断”。
+
+**为什么对照组不能用系统 TrustManager**：Android 的 Conscrypt 在 `TrustManagerImpl` 里
+查询证书公钥黑名单（`CertBlocklistImpl`）。如果对照组也走平台 `TrustManagerFactory`，
+系统因黑名单拒绝时对照组会同样拒绝，工具只能报“错误”，无法得出“阻断生效”。因此
+`PinnedTrust` 直接调用 `CertPathValidator`（PKIX）并只信任指定根，刻意不查询平台黑名单。
 
 ---
 
@@ -177,16 +184,55 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - **TLS 服务端**：只 bind `127.0.0.1`，端口 0 由系统随机分配，只 accept 一次，
   握手后立即关闭；accept/连接/握手均有超时。
 - **系统测试**：`SSLContext.init(null, null, null)`，不设置自定义 TrustManager。
-- **对照组**：内存 KeyStore 只放对应根，`TrustManagerFactory` 做标准 PKIX 校验。
+- **对照组**：自实现 `X509TrustManager`，用 `CertPathValidator("PKIX")` 只信任对应根；
+  刻意不经过 Conscrypt `TrustManagerImpl`，从而不受系统证书黑名单影响。
 - **异常判定**：遍历 cause 链寻找 `CertificateException` /
   `CertPathValidatorException` / `CertificateRevokedException`（按类名识别，兼容 API 21）。
 - **资源释放**：socket 在 `finally` 中关闭；Activity 销毁时中断后台任务。
 
 ---
 
+## 在定制 Android 系统上启用证书公钥黑名单
+
+如果是要在系统镜像里内置阻断（本工具的目标场景），注意 AOSP 的 Conscrypt 有两份源码：
+
+| 路径 | 作用 |
+| --- | --- |
+| `external/conscrypt/platform/.../CertBlocklistImpl.java` | 上游源码，供 `srcgen/generate_android_src.sh` 生成 `repackaged/` |
+| `external/conscrypt/repackaged/platform/.../CertBlocklistImpl.java` | **Android.bp 实际编译的副本**（`com.android.conscrypt` APEX） |
+
+因此 8 个公钥 hash 必须加在 **`repackaged/platform/...`** 这份里；只改 `platform/...`
+不会进入设备镜像（除非之后重新跑 srcgen）。hash 格式为
+`SHA-1(PublicKey.getEncoded())`，即 SPKI DER 的 SHA-1，40 位小写十六进制，与
+`CertBlocklistImpl.isPublicKeyBlockListed` 的实现一致。
+
+快速验证（不重建镜像，userdebug + root）：
+
+```bash
+# 文件不存在时创建；逗号分隔；0644；SELinux 标签 keychain_data_file
+adb root
+adb shell 'echo "<hash1>,<hash2>,..." > /data/misc/keychain/pubkey_blacklist.txt'
+adb shell 'chmod 644 /data/misc/keychain/pubkey_blacklist.txt'
+adb shell 'chcon u:object_r:keychain_data_file:s0 /data/misc/keychain/pubkey_blacklist.txt'
+```
+
+`CertBlocklistImpl.getDefault()` 会把该文件内容追加到内置列表，进程重启后生效。
+系统镜像内置验证时应删除该文件：
+
+```bash
+adb root && adb shell rm /data/misc/keychain/pubkey_blacklist.txt
+```
+
+Android 10+ 的 Conscrypt 位于 `com.android.conscrypt` APEX 中；重建后必须把更新后的
+APEX 一起刷入（通常在 system/super 镜像内），仅 `adb sync` framework 或只重编
+`conscrypt` 模块而未刷机不会改变设备上的运行时代码。可在设备上拉取
+`/apex/com.android.conscrypt/javalib/conscrypt.jar` 并检查其中是否出现新 hash 来确认。
+
 ## 已知限制
 
 - 只验证平台默认 `X509TrustManager`，不覆盖浏览器专用 CRLSet、CT、OCSP 等机制。
+- 对照组绕过平台黑名单是刻意设计，只证明证书链在密码学/时间/用途上有效，不代表
+  平台没有其他策略（如 CT）会拒绝。
 - Android 默认不做吊销检查时，“未阻断”可能只是系统栈未检查，不代表证书仍然可信。
 - 根信任预检查以字节匹配为主，subject + 公钥匹配为兜底；定制系统可能有特殊行为。
 - `targetSdk 34`，Android 7+ 默认不信任用户安装的 CA；本工具反映的是系统信任库，

@@ -19,6 +19,7 @@
 
 - **零第三方依赖**：自实现 PEM 解析、SEC1→PKCS#8 转换、最小 DER 编码器与 X.509 叶子证书签发；仅测试依赖 JUnit。
 - **对照组是闭环的核心**：系统拒绝且对照组成功，才判“阻断生效”；两者都失败判内部错误，避免把自身缺陷误报为系统阻断。
+- **对照组必须绕过平台黑名单**：Android 的 Conscrypt `TrustManagerImpl` 会查询 `CertBlocklistImpl`。若对照组使用平台 `TrustManagerFactory`，系统因黑名单拒绝时对照组也会拒绝，无法区分“阻断生效”和“内部错误”。因此对照组使用自实现 `X509TrustManager` + `CertPathValidator("PKIX")`，只信任指定根。
 - 纯 Java、`android.app.Activity` + `ListView`，无 AndroidX；minSdk 21，compileSdk/targetSdk 34。
 - 独立 git 仓库；证书/私钥内置 assets，来源 <https://github.com/Fluepke/emudrahahahahaha.git>。
 
@@ -30,7 +31,7 @@
 | `Der` | 最小 ASN.1 DER 写入/读取（SEQUENCE、INTEGER、OID、字符串、上下文标签等） |
 | `PemKeys` | 解析 `PRIVATE KEY`（PKCS#8）与 `EC PRIVATE KEY`（SEC1），SEC1 包装为 PKCS#8 后交给 `KeyFactory("EC")` |
 | `LeafCertificates` | 生成 P-256 叶子密钥，用中间 CA 私钥按 `SHA-384 with ECDSA` 签发叶子证书并自检签名 |
-| `ChainTrust` | 系统根信任检查（`getAcceptedIssuers` 字节比对）；用指定根构建对照组 `SSLContext` |
+| `ChainTrust` | 系统根信任检查（`getAcceptedIssuers` 字节比对）；用指定根构建纯 PKIX 对照组 `SSLContext`（不经过平台`TrustManagerImpl`，绕过黑名单） |
 | `LocalTlsServer` | 仅绑定 `127.0.0.1` 的临时 `SSLServerSocket`，接受一次握手后关闭 |
 | `TlsClient` | 用给定 `SSLContext` 连接，记录协议/套件或异常 |
 | `ExceptionClassifier` | 遍历 cause 链，识别证书类失败 |
@@ -75,6 +76,21 @@ UI 只展示四种状态：`BLOCKED`（阻断生效）、`NOT_BLOCKED`（未阻�
 - `./gradlew testDebugUnitTest assembleDebug` 成功，产出 APK。
 - 不启动模拟器（用户选择）；由用户安装到目标设备实测。
 - 交付 README：证书放置、构建、安装、结果解读与限制。
+
+## 系统黑名单集成（2026-11-11 更新）
+
+- AOSP 中 `external/conscrypt/Android.bp` 的 `conscrypt_java_files` 实际编译
+  `repackaged/common` + `repackaged/platform`；设备 APEX 的 `CertBlocklistImpl` 来自
+  `external/conscrypt/repackaged/platform/...`，而不是 `external/conscrypt/platform/...`。
+- 8 个 hash 为 `SHA-1(PublicKey.getEncoded())`（SPKI DER），40 位十六进制，与
+  `CertBlocklistImpl.isPublicKeyBlockListed` 一致。
+- 运行时补充路径：`/data/misc/keychain/pubkey_blacklist.txt`（逗号分隔，0644，
+  SELinux 标签 `keychain_data_file`），用于不重建镜像的快速验证。
+- Android 10+ Conscrypt 在 `com.android.conscrypt` APEX；重建后必须连同 APEX 刷入，
+  设备上的 `/apex/com.android.conscrypt/javalib/conscrypt.jar` 必须包含新 hash。
+- 真机验证（Android 13 userdebug，2026-11-11）：写入动态黑名单后，系统握手抛出
+  `CertificateException: Certificate blocklisted by public key`；修复对照组后 APK 显示
+  8 项全部“阻断生效”。
 
 ## 结果解读限制
 
